@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     gemini_api_key: str
-
+    firecrawl_api_key: str
     embeddings_model: str = "AITeamVN/Vietnamese_Embedding_v2"
     sparse_embedding_model: str = "Qdrant/bm25"
     # gemini-2.5-flash

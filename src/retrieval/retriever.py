@@ -17,7 +17,10 @@ class Retriever:
         self.vector_db = vector_db
         self.embed_data = embed_data
         self.top_k = top_k or settings.top_k
-    
+        # Auto-connect to Qdrant if not already done
+        if self.vector_db.client is None:
+            self.vector_db.initialize_client()
+
     def search(self,
                query: str,
                top_k: Optional[int] = None):
@@ -79,16 +82,15 @@ class Retriever:
                     snippet_chars: int = 300):
         if top_k is None:
             top_k = self.top_k
-        results = self.search_with_scores(query, top_k)
+        results = self.search_with_score(query, top_k)
         citations = []
         for rank, item in enumerate(results, start=1):
             context = (item.get("context") or "").strip()
+            snippet = ""
             if context:
-                snippet = context[:200]
+                snippet = context[:snippet_chars]
                 if len(context) > snippet_chars:
                     snippet += "..."
-                else:
-                    snippet += ""
             citations.append({
                 "rank": rank,
                 "score": item.get("score"),

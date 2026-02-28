@@ -24,17 +24,17 @@ class RAG:
         self.llm = self._setup_llm()
         self.system_message = ChatMessage(
             role="system",
-            content="You are a helpful assistant that answers questions based on the provided context. "
-                   "Always base your answers on the given information and clearly indicate when you don't know something."
+            content="Bạn là một trợ lý hữu ích trả lời câu hỏi dựa trên ngữ cảnh được cung cấp. "
+                   "Luôn dựa câu trả lời của bạn trên thông tin đã cho và nêu rõ khi bạn không biết điều gì đó."
         )
         self.prompt_template = (
             "CONTEXT:\n"
             "{context}\n"
             "---------------------\n"
-            "Based on the context information above, please answer the following question. "
-            "If the context doesn't contain enough information to answer the question, or "
-            "even if you know the answer, but it is not relevant to the provided context, "
-            "clearly state that you don't know and explain what information is missing.\n\n"
+            "Dựa trên thông tin ngữ cảnh ở trên, vui lòng trả lời câu hỏi sau. "
+            "Nếu ngữ cảnh không chứa đủ thông tin để trả lời câu hỏi, hoặc "
+            "ngay cả khi bạn biết câu trả lời nhưng nó không liên quan đến ngữ cảnh được cung cấp, "
+            "hãy nêu rõ rằng bạn không biết và giải thích thông tin nào còn thiếu.\n\n"
             "QUESTION: {query}\n"
             "ANSWER: "
         )
@@ -55,25 +55,31 @@ class RAG:
     def generate_context(self, query: str, top_k: Optional[int] = None):
         context = self.retriever.get_combined_context(query, top_k=top_k)
         return context
+
     def query(self, query: str, top_k: Optional[int] = None):
         context = self.generate_context(query, top_k=top_k)
         prompt = self.prompt_template.format(context=context, query=query)
         return self.llm.call(f"{self.system_message.content}\n\n{prompt}")
+
     def get_detailed_response(self, query: str, top_k: Optional[int] = None):
-        context = self.generate_context(query, top_k=top_k)
-        prompt = self.prompt_template.format(context=context, query=query)
-        response = self.query(query, top_k=top_k)
+        retrieval_result = self.retriever.search_with_score(query=query, top_k=top_k)
+
+        response = self.query(query=query, top_k=top_k)
+
         return {
             "response": response,
-            "context": context,
-            "source": self.retriever.get_citation(query, top_k=top_k),
-            "model": self.llm_model,
+            "source": retrieval_result,
             "query": query,
-            "top_k": top_k
+            "top_k": top_k,
+            "model": self.llm_model,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens
         }
+
     def set_prompt_template(self, prompt_template: str):
         self.prompt_template = prompt_template
         logger.info(f"Set prompt template: {prompt_template}")
+
     def set_system_message(self, content: str):
         self.system_message = ChatMessage(role="system", content=content)
         logger.info(f"Set system message: {content}")

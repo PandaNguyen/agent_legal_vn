@@ -12,7 +12,10 @@ docs
 .agent
 tmp
 .env
-
+data/test.py
+data/crawler_checkpoint.json
+data/corpus.json
+*.manual_bak
 # Python
 __pycache__/
 *.py[cod]

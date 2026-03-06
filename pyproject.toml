@@ -1,0 +1,30 @@
+[project]
+name = "paralegal_agent"
+version = "0.1.0"
+description = "project2 using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "ansi2html>=1.9.2",
+    "crewai[google-genai,litellm,tools]==1.9.3",
+    "fastembed>=0.7.4",
+    "firecrawl>=4.18.0",
+    "langchain-text-splitters>=1.1.1",
+    "loguru>=0.7.3",
+    "qdrant-client>=1.17.0",
+    "sentence-transformers>=5.2.3",
+    "streamlit>=1.55.0",
+]
+
+[project.scripts]
+kickoff = "paralegal_agent.main:kickoff"
+run_crew = "paralegal_agent.main:kickoff"
+plot = "paralegal_agent.main:plot"
+run_with_trigger = "paralegal_agent.main:run_with_trigger"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "flow"

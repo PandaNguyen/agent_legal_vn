@@ -1,0 +1,28 @@
+rag_task:
+  description: >
+    NGỮ CẢNH:
+    {context}
+
+    ---------------------
+
+    CÂU HỎI:
+    {query}
+
+    YÊU CẦU:
+
+    - Chỉ được sử dụng thông tin trong phần NGỮ CẢNH.
+    - Nếu ngữ cảnh không đủ thông tin để trả lời, hãy nói rõ:
+      "Không tìm thấy thông tin phù hợp trong dữ liệu được cung cấp."
+    - Không được sử dụng kiến thức bên ngoài.
+    - Không được suy diễn.
+    - Trả lời bằng tiếng Việt.
+    - Trình bày rõ ràng, có cấu trúc.
+
+  expected_output: >
+    Một câu trả lời rõ ràng bằng tiếng Việt,
+    chỉ dựa trên ngữ cảnh được cung cấp.
+    Nếu thiếu thông tin, phải nêu rõ lý do.
+    
+  agent: rag_agent
+
+

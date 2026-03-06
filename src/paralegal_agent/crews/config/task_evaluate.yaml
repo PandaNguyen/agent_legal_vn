@@ -1,0 +1,28 @@
+evaluate_rag_response:
+  description: >
+    Bạn là người đánh giá chất lượng phản hồi RAG.
+
+    CÂU HỎI NGƯỜI DÙNG:
+    {query}
+
+    PHẢN HỒI RAG:
+    {rag_response}
+
+    HƯỚNG DẪN ĐÁNH GIÁ:
+
+    - Phản hồi có trực tiếp trả lời câu hỏi không?
+    - Nội dung có nhất quán và rõ ràng không?
+    - Có đủ chi tiết để hữu ích không?
+    - Nếu phản hồi nói "Tôi không biết", điều đó có hợp lý do thiếu ngữ cảnh không?
+
+    QUY TẮC BẮT BUỘC:
+
+    - Chỉ trả lời DUY NHẤT MỘT TỪ viết IN HOA:
+      GOOD hoặc BAD
+    - Không thêm dấu câu
+    - Không giải thích
+    - Không thêm bất kỳ nội dung nào khác
+
+  expected_output: >
+    GOOD hoặc BAD
+  agent: router_evaluator

@@ -7,7 +7,7 @@ An intelligent, automated Vietnamese legal assistant powered by CrewAI. This age
 ### 1. Prerequisites
 
 - Python 3.10+
-- [Poetry](https://python-poetry.org/) or `pip` for dependency management
+- uv for dependency management
 - A running instance of [Qdrant](https://qdrant.tech/) (Local or Cloud)
 
 ### 2. Installation
@@ -15,15 +15,14 @@ An intelligent, automated Vietnamese legal assistant powered by CrewAI. This age
 1. Clone the repository:
 
    ```bash
-   git clone <your-repo-url>
-   cd paralegal_agent
+   git clone https://github.com/PandaNguyen/agent_legal_vn.git
+   cd agent_legal_vn
    ```
 
 2. Install dependencies:
 
    ```bash
-   pip install -r requirements.txt
-   # or `poetry install` if using poetry
+   uv sync
    ```
 
 3. Configure your environment variables. Create a `.env` file in the root directory:
@@ -37,7 +36,7 @@ An intelligent, automated Vietnamese legal assistant powered by CrewAI. This age
 You can start the main RAG flow by executing the main script:
 
 ```bash
-python -m src.paralegal_agent.main
+uv run streamlit run app.py
 ```
 
 ## Features

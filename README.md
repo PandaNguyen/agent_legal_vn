@@ -70,6 +70,40 @@ For advanced settings like chunking and retrieval parameters (`top_k`, `chunk_si
 - [Architecture Diagram](./agent_flow_plot.html) _(Generate using `agent_flow.plot()` in main.py)_
 - [Data Pipeline Overview](./src/paralegal_agent/data_pipeline/README.md) _(Currently manages legal corpus crawling, chunking, and JSONL conversion)_
 
+## Retrieval Evaluation
+
+Performance benchmarks based on **2065 evaluated queries** (F-score calculated with beta = 2.0).
+
+### Hybrid Search Performance
+
+| Top-k | Recall | Precision | F2.0-Score | MRR   |
+| ----- | ------ | --------- | ---------- | ----- |
+| 1     | 0.587  | 0.677     | 0.596      | 0.677 |
+| 3     | 0.758  | 0.300     | 0.566      | 0.752 |
+| 5     | 0.806  | 0.195     | 0.480      | 0.762 |
+| 10    | 0.865  | 0.106     | 0.344      | 0.768 |
+| 20    | 0.903  | 0.057     | 0.220      | 0.770 |
+
+### Dense Search Performance
+
+| Top-k | Recall | Precision | F2.0-Score | MRR   |
+| ----- | ------ | --------- | ---------- | ----- |
+| 1     | 0.665  | 0.765     | 0.675      | 0.765 |
+| 3     | 0.814  | 0.323     | 0.608      | 0.829 |
+| 5     | 0.848  | 0.205     | 0.505      | 0.835 |
+| 10    | 0.883  | 0.109     | 0.353      | 0.837 |
+| 20    | 0.911  | 0.057     | 0.223      | 0.838 |
+
+### Sparse Search Performance
+
+| Top-k | Recall | Precision | F2.0-Score | MRR   |
+| ----- | ------ | --------- | ---------- | ----- |
+| 1     | 0.381  | 0.438     | 0.386      | 0.438 |
+| 3     | 0.552  | 0.218     | 0.412      | 0.521 |
+| 5     | 0.618  | 0.148     | 0.367      | 0.536 |
+| 10    | 0.694  | 0.085     | 0.276      | 0.546 |
+| 20    | 0.757  | 0.047     | 0.182      | 0.550 |
+
 ## Contributing
 
 1. Fork the Project

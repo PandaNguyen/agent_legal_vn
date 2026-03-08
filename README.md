@@ -2,6 +2,8 @@
 
 An intelligent, automated Vietnamese legal assistant powered by CrewAI. This agent utilizes a robust Retrieval-Augmented Generation (RAG) pipeline combining hybrid search (dense + sparse), automated response evaluation, and smart web search fallback to deliver accurate, highly reliable, and cited legal answers.
 
+## Demo
+![Demo](demo.gif)
 ## Quick Start
 
 ### 1. Prerequisites

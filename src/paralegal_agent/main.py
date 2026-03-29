@@ -11,11 +11,15 @@ from paralegal_agent.indexing.qdrant_vdb import QdrantVDB
 from paralegal_agent.embeddings.embed_data import Embeddata
 from paralegal_agent.tools.firecrawl_search_tool import FirecrawlSearchTool
 from paralegal_agent.provider.llm_factory import create_llm
+from paralegal_agent.cache.query_cache import QueryCacheLookup
 class AgentState(BaseModel):
     query: str = ""
     top_k: Optional[int] = 3
     retrieved_nodes: List[NodeWithScore] = []
     rag_response: str = ""
+    cache_threshold: float = 0.85
+    corpus_path: str = settings.docs_path
+    stream_callback: Optional[Any] = None
 
 
 def extract_citations(nodes: List[NodeWithScore]) -> List[Dict[str, Any]]:
@@ -53,15 +57,25 @@ class AgentFlow(Flow[AgentState]):
         llm_model: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        cache_threshold: float = 0.85,
+        corpus_path: Optional[str] = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
-        self.retriever       = retriever
-        self.gemini_api_key  = gemini_api_key or settings.gemini_api_key
-        self.llm_model       = llm_model   if llm_model   is not None else settings.llm_model
-        self.temperature     = temperature if temperature is not None else settings.temperature
-        self.max_tokens      = max_tokens  if max_tokens  is not None else settings.max_tokens
-
+        self.retriever        = retriever
+        self.gemini_api_key   = gemini_api_key or settings.gemini_api_key
+        self.llm_model        = llm_model   if llm_model   is not None else settings.llm_model
+        self.temperature      = temperature if temperature is not None else settings.temperature
+        self.max_tokens       = max_tokens  if max_tokens  is not None else settings.max_tokens
+        self.cache_threshold  = cache_threshold
+        self.corpus_path      = corpus_path or settings.docs_path
+        self._cache_lookup    = QueryCacheLookup(
+            client     = retriever.vector_db.client,
+            embed_data = retriever.embed_data,
+            threshold  = self.cache_threshold,
+            # corpus_path: None → QueryCacheLookup uses __file__-relative default
+            corpus_path = corpus_path if corpus_path else None,
+        )
         logger.info(f"Using LLM model: {self.llm_model}, temperature: {self.temperature}, max_tokens: {self.max_tokens}")
 
     def _make_llm(self):
@@ -71,26 +85,60 @@ class AgentFlow(Flow[AgentState]):
             max_tokens=self.max_tokens,
         )
 
-    def _call_llm(self, prompt: str) -> str:
+    def _call_llm(self, prompt: str, stream_callback=None) -> str:
         llm = self._make_llm()
-        response = llm.call(messages=[{"role": "user", "content": prompt}])
+        try:
+            import inspect
+            sig = inspect.signature(llm.call)
+            if "stream_callback" in sig.parameters or "kwargs" in sig.parameters:
+                response = llm.call(messages=[{"role": "user", "content": prompt}], stream_callback=stream_callback)
+            else:
+                response = llm.call(messages=[{"role": "user", "content": prompt}])
+        except Exception as e:
+            logger.warning(f"Error inspecting llm.call signature, falling back to basic call: {e}")
+            response = llm.call(messages=[{"role": "user", "content": prompt}])
         return response.strip() if isinstance(response, str) else str(response).strip()
 
     @start()
     def retrieve(self) -> RetrieveEvent:
+        """Step 0: cache check first, then normal retrieval on miss."""
         query = self.state.query
         top_k = self.state.top_k
         if not query:
             raise ValueError("Query is required")
-        logger.info(f"Retrieving documents for query: {query}")
+
+        # --- Cache lookup ---
+        logger.info(f"[Cache] Checking for query: {query}")
+        hit = self._cache_lookup.search(query)
+        if hit:
+            self._cache_hit_context = hit["context"]
+            self._cache_hit_score   = hit["score"]
+            self._cache_hit_citations = hit.get("citations", [])
+            logger.info(f"[Cache] HIT  score={hit['score']:.4f} — skipping retrieval")
+            return RetrieveEvent(retrieved_nodes=[], query=query)
+
+        # --- Cache MISS: normal vector retrieval ---
+        self._cache_hit_context = None
+        self._cache_hit_score   = 0.0
+        self._cache_hit_citations = []
+        logger.info("[Cache] MISS — running normal retrieval")
         result = self.retriever.search(query, top_k=top_k)
         self.state.retrieved_nodes = result
         return RetrieveEvent(retrieved_nodes=result, query=query)
 
     @listen(retrieve)
     def generate_rag_response(self, event: RetrieveEvent) -> RAGResponseEvent:
-        logger.info(f"Generating RAG response for query: {event.query}")
-        query   = self.state.query
+        query = self.state.query
+
+        # --- Cache HIT: build context from JSON corpus ---
+        if self._cache_hit_context:
+            logger.info("[Cache] Generating answer from cached law-unit context")
+            context = self._cache_hit_context
+            self.state.rag_response = "__CACHE_HIT__"  # sentinel, replaced in synthesize
+            return RAGResponseEvent(rag_response="__CACHE_HIT__", query=query, context=context)
+
+        # --- Normal RAG ---
+        logger.info(f"Generating RAG response for query: {query}")
         context = "\n\n---\n\n".join([node.node.text for node in self.state.retrieved_nodes])
         result  = QdrantRAGCrew(
             llm_model=self.llm_model,
@@ -102,6 +150,10 @@ class AgentFlow(Flow[AgentState]):
 
     @router(generate_rag_response)
     def evaluate_response(self, event: RAGResponseEvent) -> str:
+        # Cache HIT: skip evaluation, go straight to synthesize
+        if self._cache_hit_context:
+            logger.info("[Cache] Skipping evaluation — routing to synthesize")
+            return "synthesize"
         logger.info(f"Evaluating RAG response for query: {event.query}")
         result     = EvaluateCrew(
             llm_model=self.llm_model,
@@ -153,8 +205,41 @@ Truy vấn tối ưu:"""
     @listen(or_("evaluate_response", "perform_web_search"))
     async def synthesize_response(self, event: RAGResponseEvent | SynthesizeEvent) -> Dict[str, Any]:
         logger.info("Synthesizing final response")
+        query = self.state.query
+
+        # --- Cache HIT: generate directly from corpus law-unit context ---
+        if self._cache_hit_context:
+            score   = self._cache_hit_score
+            context = self._cache_hit_context
+            citations = getattr(self, "_cache_hit_citations", [])
+            logger.info(f"[Cache] Synthesizing from cached context (score={score:.4f})")
+            prompt = f"""Dựa trên các quy định pháp luật dưới đây, hãy trả lời câu hỏi một cách rõ ràng và chính xác bằng tiếng Việt.
+
+Câu hỏi: {query}
+
+Quy định pháp luật liên quan:
+{context}
+
+Câu trả lời:"""
+            try:
+                final_answer = self._call_llm(prompt, stream_callback=getattr(self.state, "stream_callback", None))
+            except Exception as e:
+                logger.error(f"Cache-hit LLM call failed: {e}")
+                final_answer = context
+            return {
+                "answer":             final_answer,
+                "rag_response":       final_answer,
+                "web_search_results": None,
+                "used_web_results":   False,
+                "query":              query,
+                "citations":          citations,
+                "from_cache":         True,
+                "cache_score":        round(score, 4),
+                "context":            context
+            }
+
+        # --- Normal flow ---
         rag_response       = self.state.rag_response
-        query              = self.state.query
         web_search_results = getattr(event, "web_search_results", None)
         use_web_results    = getattr(event, "use_web_results", False)
 
@@ -188,12 +273,11 @@ Câu trả lời được cải thiện (tiếng Việt):"""
             used_web = False
 
         try:
-            final_answer = self._call_llm(prompt)
+            final_answer = self._call_llm(prompt, stream_callback=getattr(self.state, "stream_callback", None))
         except Exception as e:
             logger.error(f"Synthesis failed, falling back to raw RAG: {e}")
             final_answer = rag_response
 
-        # ✅ Trích xuất citations
         citations = extract_citations(self.state.retrieved_nodes)
         logger.info(f"Extracted {len(citations)} citations from retrieved nodes")
 
@@ -203,7 +287,7 @@ Câu trả lời được cải thiện (tiếng Việt):"""
             "web_search_results":  web_search_results if used_web else None,
             "used_web_results":    used_web,
             "query":               query,
-            "citations":           citations,  # ✅
+            "citations":           citations,  
         }
 
 
@@ -211,7 +295,7 @@ def kickoff():
     vector_db  = QdrantVDB()
     retriever  = Retriever(vector_db=vector_db, embed_data=Embeddata())
     agent_flow = AgentFlow(retriever=retriever)
-    agent_flow.kickoff({"query": "Thủ đô của nước AJHFDJAH là gì?", "top_k": 1})
+    agent_flow.kickoff({"query": "Thưa luật sư tôi có đăng ký kết hôn trên pháp luật nhưng nay vợ chồng bỏ nhau theo phong tục tập quán như vậy tôi có được phép kết hôn với người khác không ạ?", "top_k": 1})
 
 
 def plot():
@@ -225,17 +309,21 @@ class AgentWorkflow:
     def __init__(
         self,
         retriever: Retriever,
-        gemini_api_key: Optional[str] = None,
-        llm_model:   Optional[str]   = None,
-        temperature: Optional[float] = None,
-        max_tokens:  Optional[int]   = None,
+        gemini_api_key: Optional[str]  = None,
+        llm_model:      Optional[str]  = None,
+        temperature:    Optional[float]= None,
+        max_tokens:     Optional[int]  = None,
+        cache_threshold: float         = 0.85,
+        corpus_path:    Optional[str]  = None,
     ):
         self.flow = AgentFlow(
-            retriever=retriever,
-            gemini_api_key=gemini_api_key or settings.gemini_api_key,
-            llm_model=   llm_model   if llm_model   is not None else settings.llm_model,
-            temperature= temperature if temperature is not None else settings.temperature,
-            max_tokens=  max_tokens  if max_tokens  is not None else settings.max_tokens,
+            retriever       = retriever,
+            gemini_api_key  = gemini_api_key or settings.gemini_api_key,
+            llm_model       = llm_model   if llm_model   is not None else settings.llm_model,
+            temperature     = temperature if temperature is not None else settings.temperature,
+            max_tokens      = max_tokens  if max_tokens  is not None else settings.max_tokens,
+            cache_threshold = cache_threshold,
+            corpus_path     = corpus_path,
         )
 
     def kickoff(self, inputs: Dict[str, Any]) -> Dict[str, Any]:

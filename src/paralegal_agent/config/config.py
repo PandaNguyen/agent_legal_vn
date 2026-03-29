@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     qdrant_collection_name: str = "legal_documents"
     qdrant_api_key: str
     qdrant_url: str
-    docs_path: str = "./data/corpus.json"
+    docs_path: str = "./data/corpus_final.json"
 
     hf_cache_dir: str = "./cache/hf_cache"
 

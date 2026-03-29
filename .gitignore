@@ -8,3 +8,6 @@ src/paralegal_agent/data/corpus_raw.json
 .venv
 .agent
 interview_questions
+test_oprouter.py
+test_oprouter3.py
+tmp_write_cache.py

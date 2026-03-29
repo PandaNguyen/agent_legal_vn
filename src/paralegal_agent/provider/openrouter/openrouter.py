@@ -65,11 +65,16 @@ class OpenRouterLLM(BaseLLM):
         if self.site_name:
             headers["X-Title"] = self.site_name
 
+        stream_callback = kwargs.get("stream_callback", None)
+        if stream_callback:
+            payload["stream"] = True
+
         response = requests.post(
             OPENROUTER_API_URL,
             headers=headers,
             json=payload,
             timeout=120,
+            stream=bool(stream_callback),
         )
 
         if not response.ok:
@@ -80,8 +85,41 @@ class OpenRouterLLM(BaseLLM):
                 response=response,
             )
 
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
+        if stream_callback:
+            import json
+            full_content = ""
+            current_reasoning = ""
+            for line in response.iter_lines():
+                if line:
+                    decoded = line.decode('utf-8').strip()
+                    if decoded.startswith('data: ') and decoded != 'data: [DONE]':
+                        try:
+                            # It could be missing data?
+                            data = json.loads(decoded[6:])
+                            if "choices" in data and len(data["choices"]) > 0:
+                                delta = data["choices"][0].get("delta", {})
+                                
+                                # Process reasoning tokens if present
+                                reasoning = delta.get("reasoning")
+                                if reasoning and isinstance(reasoning, str):
+                                    current_reasoning += reasoning
+                                    # Stream reasoning enclosed in italics so user sees thinking process
+                                    # But since markdown redraws the whole string, we could just append it dynamically.
+                                    # Actually, Streamlit will just render the latest string we send it.
+                                    # If we want to show reasoning, we should send full_content + " *Suy nghĩ...*" or something.
+                                    # But better to just display the reasoning!
+                                    stream_callback(reasoning)
+                                
+                                content = delta.get("content")
+                                if content and isinstance(content, str):
+                                    full_content += content
+                                    stream_callback(content)
+                        except Exception as e:
+                            print(f"[DEBUG SSE Error] {e} on line: {decoded}")
+            return full_content
+        else:
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
 
     def supports_function_calling(self) -> bool:
         return True

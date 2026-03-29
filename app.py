@@ -189,14 +189,21 @@ if st.session_state.workflow is not None:
         with st.chat_message("assistant"):
             with st.spinner("Đang tìm kiếm và tổng hợp thông tin..."):
                 try:
-                    inputs        = {"query": prompt, "top_k": settings.top_k}
+                    content_placeholder = st.empty()
+                    st.session_state.full_answer = ""
+
+                    def stream_chunk(chunk: str):
+                        st.session_state.full_answer += chunk
+                        content_placeholder.markdown(st.session_state.full_answer + " ▌")
+
+                    inputs        = {"query": prompt, "top_k": settings.top_k, "stream_callback": stream_chunk}
                     response_dict = run_workflow(inputs)
 
                     if isinstance(response_dict, dict) and "answer" in response_dict:
                         answer    = response_dict["answer"]
                         citations = response_dict.get("citations", [])
 
-                        st.markdown(answer)
+                        content_placeholder.markdown(answer)
                         if citations:
                             render_citations(citations)
 

@@ -9,11 +9,12 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("HUGGINGFACE_API_KEY", "HF_TOKEN"),
     )
+    openrouter_api_key: str = Field(default="", validation_alias="OPENROUTER_API_KEY")
     firecrawl_api_key: str
     embeddings_model: str = "AITeamVN/Vietnamese_Embedding_v2"
     sparse_embedding_model: str = "Qdrant/bm25"
     # gemini-2.5-flash "gemma-3-27b-it" "ollama/phi3.5" Qwen/Qwen3-4B-Instruct-2507:nscale deepseek-ai/DeepSeek-R1-0528:together
-    llm_model: str = "huggingface/deepseek-ai/DeepSeek-R1-0528:together"
+    llm_model: str = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
     ollama_base_url: str = "http://localhost:11434"
     huggingface_router_url: str = "https://router.huggingface.co/v1/chat/completions"
 

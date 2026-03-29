@@ -15,37 +15,26 @@ from src.paralegal_agent.config.config import settings
 
 load_dotenv()
 
-st.set_page_config(page_title="Paralegal AI Assistant", layout="wide", page_icon="⚖️")
+st.set_page_config(page_title="Paralegal AI Assistant", layout="centered", page_icon="⚖️")
 
+# --- Session state ---
 if "id" not in st.session_state:
     st.session_state.id = str(uuid.uuid4())[:8]
 if "workflow" not in st.session_state:
     st.session_state.workflow = None
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "workflow_logs" not in st.session_state:
-    st.session_state.workflow_logs = []
-
-session_id = st.session_state.id
+if "workflow_initialized" not in st.session_state:
+    st.session_state.workflow_initialized = False
 
 
 def reset_chat():
     st.session_state.messages = []
-    st.session_state.workflow_logs = []
     gc.collect()
 
 
-def render_logs(log_text: str):
-    st.markdown(
-        f"""<div style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-        'Liberation Mono', 'Courier New', monospace; white-space: pre-wrap;
-        line-height: 1.45; font-size: 13px;">{log_text}</div>""",
-        unsafe_allow_html=True,
-    )
-
-
 def render_citations(citations: List[Dict[str, Any]]):
-    """Render citation cards đẹp cho từng văn bản pháp lý."""
+    """Render citation cards cho từng văn bản pháp lý."""
     if not citations:
         return
 
@@ -127,106 +116,56 @@ def render_citations(citations: List[Dict[str, Any]]):
         )
 
 
+@st.cache_resource(show_spinner=False)
 def initialize_workflow():
-    with st.spinner("Kết nối tới Backend Services..."):
-        try:
-            settings.llm_model         = st.session_state["llm_model"]     if "llm_model"     in st.session_state else settings.llm_model
-            settings.gemini_api_key    = st.session_state["gemini_key"]    if "gemini_key"    in st.session_state else settings.gemini_api_key
-            settings.firecrawl_api_key = st.session_state["firecrawl_key"] if "firecrawl_key" in st.session_state else settings.firecrawl_api_key
-            settings.temperature       = float(st.session_state["temperature"]) if "temperature" in st.session_state else settings.temperature
-            settings.max_tokens        = int(st.session_state["max_tokens"]) if "max_tokens"   in st.session_state else settings.max_tokens
-            settings.top_k             = int(st.session_state["top_k"])     if "top_k"         in st.session_state else settings.top_k
-
-            os.environ["GEMINI_API_KEY"]    = settings.gemini_api_key
-            os.environ["FIRECRAWL_API_KEY"] = settings.firecrawl_api_key
-
-            st.info(
-                f"**Settings đang dùng:**\n"
-                f"- Model: `{settings.llm_model}`\n"
-                f"- Temperature: `{settings.temperature}`\n"
-                f"- Max Tokens: `{settings.max_tokens}`\n"
-                f"- Top K: `{settings.top_k}`\n"
-                f"- Gemini Key: `{'*' * 8 + settings.gemini_api_key[-4:] if len(settings.gemini_api_key) > 4 else '(empty)'}`\n"
-                f"- Firecrawl Key: `{'*' * 8 + settings.firecrawl_api_key[-4:] if len(settings.firecrawl_api_key) > 4 else '(empty)'}`"
-            )
-
-            st.info("Loading embedding model...")
-            embed_data = Embeddata()
-            st.success("Embedding model loaded")
-
-            st.info("Connecting to Qdrant Cloud...")
-            vector_db = QdrantVDB()
-            vector_db.initialize_client()
-            st.success("Connected to Qdrant Cloud")
-
-            retriever = Retriever(vector_db=vector_db, embed_data=embed_data, top_k=settings.top_k)
-            st.success("Retrieval system ready")
-
-            st.info("Setting up agentic workflow...")
-            workflow = AgentWorkflow(
-                retriever=retriever,
-                gemini_api_key=settings.gemini_api_key,
-                llm_model=settings.llm_model,
-                temperature=settings.temperature,
-                max_tokens=settings.max_tokens,
-            )
-            st.success("Workflow setup completed!")
-            st.session_state.workflow = workflow
-
-        except Exception as e:
-            st.error(f"Error initializing workflow: {e}")
-            st.session_state.workflow = None
+    """Khởi tạo workflow một lần duy nhất, cache lại cho toàn bộ session."""
+    embed_data = Embeddata()
+    vector_db = QdrantVDB()
+    vector_db.initialize_client()
+    retriever = Retriever(vector_db=vector_db, embed_data=embed_data, top_k=settings.top_k)
+    workflow = AgentWorkflow(
+        retriever=retriever,
+        gemini_api_key=settings.gemini_api_key,
+        llm_model=settings.llm_model,
+        temperature=settings.temperature,
+        max_tokens=settings.max_tokens,
+    )
+    return workflow
 
 
 def run_workflow(inputs: Dict[str, Any]):
     f = io.StringIO()
     with redirect_stdout(f):
         result = st.session_state.workflow.kickoff(inputs)
-    logs = f.getvalue()
-    if logs:
-        st.session_state.workflow_logs.append(logs)
     return result
 
 
-# --- Sidebar ---
-with st.sidebar:
-    st.header("Settings Configuration")
-
-    st.subheader("LLM Parameters")
-    st.text_input("LLM Model Name", value=settings.llm_model, key="llm_model")
-    st.slider("Temperature", min_value=0.0, max_value=1.0, value=float(settings.temperature), step=0.1, key="temperature")
-    st.number_input("Max Tokens", min_value=128, max_value=8192, value=int(settings.max_tokens), step=128, key="max_tokens")
-
-    st.subheader("Retriever Settings")
-    st.number_input("Top K (Retriever)", min_value=1, max_value=10, value=int(settings.top_k), step=1, key="top_k")
-
-    st.subheader("API Keys (Overrides)")
-    st.text_input("Gemini API Key", value=settings.gemini_api_key, type="password", key="gemini_key")
-    st.text_input("Firecrawl API Key", value=settings.firecrawl_api_key, type="password", key="firecrawl_key")
-
-    st.markdown("---")
-
-    if st.button("Init / Re-init Workflow", use_container_width=True, type="primary"):
-        initialize_workflow()
-
-    if st.button("Clear Chat History", use_container_width=True):
-        reset_chat()
-
-    with st.expander("Internal Logs", expanded=False):
-        if st.session_state.workflow_logs:
-            for log in st.session_state.workflow_logs:
-                render_logs(log)
-        else:
-            st.write("No logs yet.")
-
-
-# --- Main ---
-st.title("Tư vấn Pháp luật AI")
-st.markdown("Hệ thống trợ lý AI hỗ trợ tra cứu Pháp luật bằng tiếng Việt sử dụng kiến trúc multi-agents kết hợp RAG và Firecrawl Web Search.")
-
+# --- Auto-init workflow ---
 if st.session_state.workflow is None:
-    st.warning("Workflow chưa được khởi tạo. Vui lòng kiểm tra API Keys bên thanh (Sidebar) và nhấn nút **Init / Re-init Workflow** để bắt đầu.")
-else:
+    with st.spinner("Đang khởi động hệ thống..."):
+        try:
+            st.session_state.workflow = initialize_workflow()
+        except Exception as e:
+            st.error(f"Không thể khởi tạo hệ thống: {e}")
+
+# --- Main UI ---
+col_title, col_btn = st.columns([5, 1])
+with col_title:
+    st.title("⚖️ Tư vấn Pháp luật AI")
+with col_btn:
+    st.write("")  # spacing
+    if st.button("🗑️ Xóa chat", use_container_width=True):
+        reset_chat()
+        st.rerun()
+
+st.markdown(
+    "Trợ lý AI tra cứu pháp luật Việt Nam — multi-agents · RAG · Web Search",
+    unsafe_allow_html=False,
+)
+st.divider()
+
+# --- Chat history ---
+if st.session_state.workflow is not None:
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -250,7 +189,7 @@ else:
         with st.chat_message("assistant"):
             with st.spinner("Đang tìm kiếm và tổng hợp thông tin..."):
                 try:
-                    inputs        = {"query": prompt, "top_k": st.session_state.get("top_k", settings.top_k)}
+                    inputs        = {"query": prompt, "top_k": settings.top_k}
                     response_dict = run_workflow(inputs)
 
                     if isinstance(response_dict, dict) and "answer" in response_dict:
@@ -258,8 +197,6 @@ else:
                         citations = response_dict.get("citations", [])
 
                         st.markdown(answer)
-
-                        # Citations hiện ngay dưới câu trả lời
                         if citations:
                             render_citations(citations)
 
@@ -276,3 +213,5 @@ else:
 
                 except Exception as e:
                     st.error(f"Đã xảy ra lỗi hệ thống: {str(e)}")
+else:
+    st.error("Hệ thống chưa sẵn sàng. Vui lòng kiểm tra cấu hình trong `src/paralegal_agent/config/config.py` và khởi động lại.")

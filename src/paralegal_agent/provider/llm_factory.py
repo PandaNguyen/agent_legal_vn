@@ -6,6 +6,7 @@ from crewai import LLM
 
 from paralegal_agent.config.config import settings
 from paralegal_agent.provider.Huggingface.qwen import HuggingFaceRouterLLM
+from paralegal_agent.provider.openrouter.openrouter import OpenRouterLLM
 
 
 def _is_gemini_model(model_name: str) -> bool:
@@ -19,6 +20,10 @@ def _is_ollama_model(model_name: str) -> bool:
 
 def _is_huggingface_model(model_name: str) -> bool:
     return model_name.lower().startswith("huggingface/")
+
+
+def _is_openrouter_model(model_name: str) -> bool:
+    return model_name.lower().startswith("openrouter/")
 
 
 def create_llm(
@@ -45,6 +50,15 @@ def create_llm(
             model=model_name,
             api_key=settings.huggingface_api_key,
             endpoint=settings.huggingface_router_url,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    elif _is_openrouter_model(model_name):
+        if not settings.openrouter_api_key:
+            raise ValueError("OpenRouter API key is required. Set OPENROUTER_API_KEY in your .env file.")
+        return OpenRouterLLM(
+            model=model_name,
+            api_key=settings.openrouter_api_key,
             temperature=temperature,
             max_tokens=max_tokens,
         )

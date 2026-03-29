@@ -7,3 +7,4 @@ src/paralegal_agent/data/corpus_final.json
 src/paralegal_agent/data/corpus_raw.json
 .venv
 .agent
+interview_questions
